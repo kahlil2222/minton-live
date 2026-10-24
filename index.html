@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F7FD">
+<title>친선 배드민턴 실시간</title>
+<meta name="description" content="친선 배드민턴 행사의 회차·코트 배정과 경기 결과를 실시간으로 봅니다.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='46' r='12' fill='%233B82F6'/%3E%3Cpath d='M20 40 L10 8 L54 8 L44 40 Z' fill='%23EAF2FF' stroke='%233B82F6' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<!--
+  참가자용 실시간 페이지(설계서 [LIVE-05]). 원본: 민턴 저장소 live_web/index.html.
+  앱이 Firebase(Firestore) live/{코드} 문서에 올린 요약([LIVE-02])을 읽어 보여 준다. 읽기만 한다.
+-->
+<style>
+  :root {
+    --primary: #3B82F6; --primaryDark: #1D5FD1; --primarySoft: #EAF2FF;
+    --bg: #F4F7FD; --card: #fff; --text: #1F2937; --sub: #6B7280; --line: #E5EAF3;
+    --a: #3B82F6; --aSoft: #EDF4FF; --b: #F05A6E; --bSoft: #FFEFF1;
+    --playing: #F05A6E; --playingSoft: #FFE9EC; --assigned: #F59E0B; --assignedSoft: #FFF4DE;
+    --waiting: #3B82F6; --waitingSoft: #E6F0FF; --done: #6B7280; --doneSoft: #F1F3F6;
+    --success: #10B981; --successSoft: #E3F8EF; --danger: #EF4444; --dangerSoft: #FFECEC;
+    --me: #FDE68A;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 12px 16px calc(28px + env(safe-area-inset-bottom)); }
+  .jua { font-family: "Jua", "Pretendard Variable", sans-serif; font-weight: 400; }
+  .card { background: var(--card); border-radius: 22px; box-shadow: 0 6px 18px rgba(59,130,246,.06); padding: 16px; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+  .muted { color: var(--sub); }
+  button { font: inherit; }
+
+  /* 머리 */
+  .head { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 44px; height: 44px; flex: none; border-radius: 14px; background: var(--primarySoft); display: grid; place-items: center; }
+  .head h1 { font-size: 23px; margin: 0; line-height: 1.2; word-break: keep-all; }
+  .head .date { font-size: 13px; color: var(--sub); margin-top: 2px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+  .stat { background: var(--bg); border-radius: 16px; padding: 10px 4px; text-align: center; }
+  .stat b { display: block; font-family: "Jua", sans-serif; font-weight: 400; font-size: 24px; line-height: 1.1; }
+  .stat span { font-size: 12px; color: var(--sub); }
+
+  /* 내 이름 */
+  .me { margin-top: 12px; }
+  .me-row { display: flex; gap: 8px; align-items: center; }
+  .me input { flex: 1; min-width: 0; height: 44px; border-radius: 14px; border: 1.4px solid var(--line); padding: 0 14px; font: inherit; font-size: 16px; background: #fff; color: var(--text); }
+  .me input:focus { outline: none; border-color: var(--primary); }
+  .me-msg { margin-top: 10px; border-radius: 16px; padding: 12px 14px; font-weight: 700; font-size: 15px; line-height: 1.4; }
+
+  /* 회차 */
+  .rounds { display: flex; gap: 8px; overflow-x: auto; padding: 14px 2px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .rounds::-webkit-scrollbar { display: none; }
+  .rbtn { flex: none; border: 1.4px solid var(--line); background: #fff; color: var(--text); border-radius: 99px; padding: 8px 14px; font-weight: 800; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .rbtn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .sec-title { display: flex; justify-content: space-between; align-items: baseline; margin: 16px 4px 8px; }
+  .sec-title h2 { font-size: 19px; margin: 0; }
+  .sec-title small { font-size: 13px; color: var(--sub); }
+
+  /* 코트 카드 */
+  .courts { display: grid; gap: 12px; }
+  .court { padding: 14px; }
+  .court-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .court-no { font-family: "Jua", sans-serif; font-size: 21px; }
+  .court-time { font-size: 13px; color: var(--sub); font-variant-numeric: tabular-nums; }
+  .team { border-radius: 16px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+  .team.a { background: var(--aSoft); }
+  .team.b { background: var(--bSoft); }
+  .team .tag { flex: none; width: 30px; height: 30px; border-radius: 10px; color: #fff; font-weight: 900; font-size: 14px; display: grid; place-items: center; }
+  .team.a .tag { background: var(--a); }
+  .team.b .tag { background: var(--b); }
+  .team.lose { opacity: .55; }
+  .names { flex: 1; min-width: 0; display: grid; gap: 4px; }
+  .pname { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-weight: 700; font-size: 16px; }
+  .pname.me-hit { background: var(--me); border-radius: 8px; padding: 0 6px; margin: 0 -6px; }
+  .grade { font-size: 12px; font-weight: 800; color: var(--primaryDark); background: #fff; border-radius: 6px; padding: 1px 6px; }
+  .tname { font-size: 12px; color: var(--sub); font-weight: 600; }
+  .win { flex: none; font-size: 12px; font-weight: 900; color: var(--success); }
+  .vs { text-align: center; font-family: "Jua", sans-serif; color: var(--sub); font-size: 14px; margin: 4px 0; }
+
+  /* 대기 */
+  .waits { display: flex; flex-wrap: wrap; gap: 8px; }
+  .wchip { background: #fff; border-radius: 14px; padding: 8px 12px; display: inline-flex; align-items: baseline; gap: 6px; box-shadow: 0 3px 10px rgba(59,130,246,.06); font-weight: 700; }
+  .wchip i { font-style: normal; font-size: 12px; color: var(--waiting); font-weight: 900; }
+  .wchip.me-hit { background: var(--me); }
+
+  .banner { border-radius: 16px; padding: 12px 14px; font-size: 14px; font-weight: 700; margin-top: 12px; line-height: 1.45; }
+  .empty { text-align: center; padding: 28px 16px; color: var(--sub); line-height: 1.6; }
+  .empty b { display: block; color: var(--text); font-family: "Jua", sans-serif; font-weight: 400; font-size: 21px; margin-bottom: 6px; }
+  .foot { text-align: center; font-size: 12px; color: var(--sub); margin-top: 22px; }
+
+  /* 코드 입력 */
+  .entry { min-height: 80vh; display: grid; place-items: center; }
+  .entry .card { width: 100%; text-align: center; padding: 28px 20px; }
+  .entry h1 { font-size: 26px; margin: 12px 0 6px; }
+  .code-input { width: 100%; height: 60px; margin-top: 18px; border-radius: 16px; border: 1.6px solid var(--line); text-align: center; font-family: "Jua", sans-serif; font-size: 30px; letter-spacing: 8px; text-transform: uppercase; color: var(--primaryDark); background: #fff; }
+  .code-input:focus { outline: none; border-color: var(--primary); }
+  .btn { display: block; width: 100%; height: 52px; margin-top: 12px; border: 0; border-radius: 16px; background: var(--primary); color: #fff; font-size: 17px; font-weight: 800; cursor: pointer; }
+  .btn:disabled { opacity: .45; }
+  .link { background: none; border: 0; color: var(--primary); font-weight: 800; font-size: 14px; padding: 8px; cursor: pointer; }
+  .spin { width: 34px; height: 34px; border-radius: 50%; border: 4px solid var(--primarySoft); border-top-color: var(--primary); animation: sp 0.9s linear infinite; margin: 0 auto 12px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+// 공개용 설정값(비밀이 아님). 쓰기는 보안 규칙으로 막혀 있다(설계서 [LIVE-04]).
+const firebaseConfig = {
+  apiKey: "AIzaSyC47YnIIaPwBAN260Tza0y0QsBUIpjlrK8",
+  authDomain: "minton-live.firebaseapp.com",
+  projectId: "minton-live",
+  storageBucket: "minton-live.firebasestorage.app",
+  messagingSenderId: "893799789198",
+  appId: "1:893799789198:web:615d3e0600ad73e39c0fdf",
+};
+
+const CODE_RE = /^[A-HJ-NP-Z2-9]{6}$/;
+const app = document.getElementById("app");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+const SHUTTLE = `<svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><path d="M18 36 L8 6 L56 6 L46 36 Z" fill="#fff" stroke="#3B82F6" stroke-width="3" stroke-linejoin="round"/><path d="M24 36 L20 6 M32 36 V6 M40 36 L44 6" stroke="#93B8F8" stroke-width="2.5"/><path d="M14 22 H50" stroke="#93B8F8" stroke-width="2.5"/><circle cx="32" cy="46" r="13" fill="#3B82F6"/></svg>`;
+
+const code = (new URLSearchParams(location.search).get("c") || "").trim().toUpperCase();
+
+// ───────── 코드 입력 화면 ─────────
+function showEntry(message) {
+  app.innerHTML = `
+    <div class="entry"><div class="card">
+      <div class="logo" style="margin:0 auto;width:64px;height:64px;border-radius:20px">${SHUTTLE}</div>
+      <h1 class="jua">친선 배드민턴 실시간</h1>
+      <div class="muted" style="font-size:14px;line-height:1.5">운영자에게 받은 6자리 코드를 넣어 주세요.<br>QR 코드를 찍으면 바로 열려요.</div>
+      ${message ? `<div class="banner" style="background:var(--dangerSoft);color:var(--danger)">${esc(message)}</div>` : ""}
+      <form id="f"><input class="code-input" id="code" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="코드" value="${esc(code)}">
+      <button class="btn" id="go" type="submit" disabled>보기</button></form>
+    </div></div>`;
+  const input = document.getElementById("code");
+  const go = document.getElementById("go");
+  const sync = () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); go.disabled = !CODE_RE.test(input.value); };
+  input.addEventListener("input", sync);
+  sync();
+  document.getElementById("f").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (CODE_RE.test(input.value)) location.search = "?c=" + input.value;
+  });
+}
+
+// ───────── 행사 화면 ─────────
+let snap = null;          // 마지막으로 받은 요약
+let gotAt = null;         // 받은 시각
+let selRound = null;      // 직접 고른 회차(null이면 마지막 회차를 따라감)
+let lastRoundCount = 0;
+let offline = false;
+let me = (store.get("minton-me") || "").trim();
+
+const STATUS = {
+  ready: ["준비", "var(--waiting)", "var(--waitingSoft)"],
+  live: ["진행 중", "var(--success)", "var(--successSoft)"],
+  ended: ["종료", "var(--done)", "var(--doneSoft)"],
+};
+const GAME = {
+  assigned: ["배정됨", "var(--assigned)", "var(--assignedSoft)"],
+  playing: ["경기중", "var(--playing)", "var(--playingSoft)"],
+  finished: ["종료", "var(--done)", "var(--doneSoft)"],
+};
+const pill = ([t, fg, bg], extra = "") => `<span class="pill" style="color:${fg};background:${bg}">${extra}${esc(t)}</span>`;
+
+function fmtDate(ymd) {
+  const [y, m, d] = (ymd || "").split("-").map(Number);
+  if (!y) return "";
+  const w = "일월화수목금토"[new Date(y, m - 1, d).getDay()];
+  return `${y}년 ${m}월 ${d}일 (${w})`;
+}
+function mmss(ms) {
+  if (!(ms >= 0)) return "";
+  const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0");
+}
+function hm(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? "" : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+const isMe = (name) => me && String(name).replace(/\s/g, "") === me.replace(/\s/g, "");
+
+function playerHtml(id, cls = "pname") {
+  const p = (snap.players || {})[id] || { n: "?", g: "", t: "" };
+  return `<div class="${cls}${isMe(p.n) ? " me-hit" : ""}"><span>${esc(p.n)}</span>${p.g ? `<span class="grade">${esc(p.g)}</span>` : ""}${p.t ? `<span class="tname">${esc(p.t)}</span>` : ""}</div>`;
+}
+
+function roundState(r) {
+  const gs = r.games || [];
+  if (gs.some((g) => g.st === "playing")) return "var(--playing)";
+  if (gs.some((g) => g.st === "assigned")) return "var(--assigned)";
+  return "#C3CAD6";
+}
+
+// 내 이름으로 내 경기·대기 상태 찾기.
+function myStatus() {
+  if (!me || !snap) return "";
+  const ids = Object.entries(snap.players || {}).filter(([, p]) => isMe(p.n)).map(([id]) => id);
+  if (!ids.length) return `<div class="me-msg" style="background:var(--doneSoft);color:var(--sub)">‘${esc(me)}’ 님을 지금 경기·대기 명단에서 찾지 못했어요.</div>`;
+  const rounds = snap.rounds || [];
+  for (const st of ["playing", "assigned"]) {
+    for (const r of rounds) for (const g of r.games || []) {
+      if (g.st === st && [...g.a, ...g.b].some((x) => ids.includes(x))) {
+        const team = g.a.some((x) => ids.includes(x)) ? "A팀" : "B팀";
+        return st === "playing"
+          ? `<div class="me-msg" style="background:var(--playingSoft);color:var(--playing)">🏸 지금 ${g.c}코트에서 경기 중이에요 (${r.no}경기 · ${team})</div>`
+          : `<div class="me-msg" style="background:var(--assignedSoft);color:#B45309">📣 ${g.c}코트에 배정됐어요! 곧 시작해요 (${r.no}경기 · ${team})</div>`;
+      }
+    }
+  }
+  const wi = (snap.waiting || []).findIndex((x) => ids.includes(x));
+  if (wi >= 0) return `<div class="me-msg" style="background:var(--waitingSoft);color:var(--primaryDark)">⏳ 대기 중이에요 · 오래 기다린 순 ${wi + 1}번째</div>`;
+  return `<div class="me-msg" style="background:var(--doneSoft);color:var(--sub)">지금은 경기·대기 명단에 없어요.</div>`;
+}
+
+function gameCard(g) {
+  const st = GAME[g.st] || GAME.finished;
+  let time = "";
+  if (g.st === "playing" && g.s) time = `<span class="court-time" data-since="${esc(g.s)}">${hm(g.s)} 시작 · ${mmss(Date.now() - new Date(g.s))}</span>`;
+  else if (g.st === "finished" && g.s && g.e) time = `<span class="court-time">${hm(g.e)} 종료 · ${mmss(new Date(g.e) - new Date(g.s))}</span>`;
+  else if (g.st === "assigned") time = `<span class="court-time">시작 전</span>`;
+  const res = g.st === "finished" ? (g.w === "A" ? pill(["A팀 승", "var(--a)", "var(--aSoft)"]) : g.w === "B" ? pill(["B팀 승", "var(--b)", "var(--bSoft)"]) : pill(["결과 없음", "var(--done)", "var(--doneSoft)"])) : "";
+  const team = (side, ids) => {
+    const won = g.st === "finished" && g.w === side.toUpperCase();
+    const lost = g.st === "finished" && g.w && !won;
+    return `<div class="team ${side}${lost ? " lose" : ""}"><div class="tag">${side.toUpperCase()}</div><div class="names">${ids.map((id) => playerHtml(id)).join("")}</div>${won ? `<span class="win">🏆 승</span>` : ""}</div>`;
+  };
+  return `<div class="card court">
+    <div class="court-top"><span class="court-no">${g.c}코트</span><span style="display:flex;gap:6px;align-items:center">${res}${pill(st)}</span></div>
+    ${team("a", g.a)}<div class="vs">VS</div>${team("b", g.b)}
+    <div style="margin-top:8px;text-align:right">${time}</div>
+  </div>`;
+}
+
+function render() {
+  if (!snap) return;
+  const rounds = snap.rounds || [];
+  // 처음과 새 회차가 생겼을 때는 마지막 회차를 보여 준다(옛 회차를 직접 고른 경우 제외).
+  if (rounds.length !== lastRoundCount) {
+    if (selRound !== null && selRound === lastRoundCount) selRound = null;
+    lastRoundCount = rounds.length;
+  }
+  const cur = selRound !== null && selRound <= rounds.length ? selRound : rounds.length;
+  const round = rounds[cur - 1];
+  const waiting = snap.waiting || [];
+  const st = STATUS[snap.status] || STATUS.live;
+  const playing = snap.playing || 0, assigned = snap.assigned || 0;
+
+  let body = "";
+  if (snap.status === "ended") body += `<div class="banner" style="background:var(--doneSoft);color:var(--sub)">행사가 끝났어요. 회차별 결과를 볼 수 있어요.</div>`;
+  if (!rounds.length) {
+    body += `<div class="card empty" style="margin-top:14px"><b>${snap.status === "ready" ? "아직 행사 시작 전이에요" : "아직 배정된 경기가 없어요"}</b>코트 배정이 나오면 여기에 바로 보여요.</div>`;
+  } else {
+    body += `<div class="rounds" id="rounds">${rounds.map((r, i) => `<button class="rbtn${i + 1 === cur ? " on" : ""}" data-r="${i + 1}"><span class="dot" style="background:${i + 1 === cur ? "#fff" : roundState(r)}"></span>${r.no}경기</button>`).join("")}</div>`;
+    const gs = round.games || [];
+    const np = gs.filter((g) => g.st === "playing").length, na = gs.filter((g) => g.st === "assigned").length, nd = gs.filter((g) => g.st === "finished").length;
+    body += `<div class="sec-title"><h2 class="jua">${round.no}경기</h2><small>${[np && `경기중 ${np}`, na && `배정 ${na}`, nd && `종료 ${nd}`].filter(Boolean).join(" · ")}</small></div>`;
+    body += `<div class="courts">${gs.map(gameCard).join("")}</div>`;
+  }
+  if (snap.status !== "ended") {
+    body += `<div class="sec-title"><h2 class="jua">대기</h2><small>${waiting.length}명 · 오래 기다린 순</small></div>`;
+    body += waiting.length
+      ? `<div class="waits">${waiting.map((id, i) => { const p = (snap.players || {})[id] || { n: "?" }; return `<span class="wchip${isMe(p.n) ? " me-hit" : ""}"><i>${i + 1}</i>${esc(p.n)}${p.g ? `<span class="grade" style="background:var(--waitingSoft)">${esc(p.g)}</span>` : ""}</span>`; }).join("")}</div>`
+      : `<div class="card empty" style="padding:16px">대기 중인 사람이 없어요.</div>`;
+  }
+
+  // 바뀌는 부분만 다시 그린다. '내 이름' 칸은 그대로 두어 글자 입력이 끊기지 않게 한다.
+  if (!document.getElementById("me")) {
+    app.innerHTML = `
+      <div class="card"><div id="hd"></div>
+        <div class="me"><div class="me-row"><input id="me" placeholder="내 이름을 넣으면 내 경기를 찾아 줘요" autocomplete="off" enterkeyhint="done"></div><div id="mymsg"></div></div>
+      </div>
+      <div id="net"></div><div id="body"></div><div class="foot" id="foot"></div>`;
+    const meInput = document.getElementById("me");
+    meInput.value = me;
+    meInput.addEventListener("input", () => { me = meInput.value.trim(); store.set("minton-me", me); render(); });
+  }
+  const rscroll = document.getElementById("rounds")?.scrollLeft;
+  document.getElementById("hd").innerHTML = `
+      <div class="head"><div class="logo">${SHUTTLE}</div>
+        <div style="flex:1;min-width:0"><h1 class="jua">${esc(snap.name)}</h1><div class="date">${fmtDate(snap.date)}</div></div>
+        ${pill(st, snap.status === "live" ? `<span class="dot" style="background:var(--success)"></span>` : "")}
+      </div>
+      <div class="stats">
+        <div class="stat"><b style="color:var(--primary)">${snap.courts ?? "-"}</b><span>코트</span></div>
+        <div class="stat"><b>${snap.active ?? "-"}</b><span>참가</span></div>
+        <div class="stat"><b style="color:var(--playing)">${playing}</b><span>경기중</span></div>
+        <div class="stat"><b style="color:var(--waiting)">${waiting.length + assigned}</b><span>대기${assigned ? ` (배정 ${assigned})` : ""}</span></div>
+      </div>`;
+  document.getElementById("mymsg").innerHTML = myStatus();
+  document.getElementById("net").innerHTML = offline ? `<div class="banner" style="background:var(--dangerSoft);color:var(--danger)">인터넷 연결이 끊겼어요. 다시 연결되면 자동으로 새로 고쳐요.</div>` : "";
+  document.getElementById("body").innerHTML = body;
+
+  const rb = document.getElementById("rounds");
+  if (rb) {
+    if (rscroll != null) rb.scrollLeft = rscroll;
+    rb.querySelectorAll(".rbtn").forEach((b) => b.addEventListener("click", () => {
+      const r = Number(b.dataset.r);
+      selRound = r === rounds.length ? null : r;
+      render();
+    }));
+    const on = rb.querySelector(".rbtn.on");
+    if (on && rscroll == null) on.scrollIntoView({ inline: "center", block: "nearest" });
+  }
+  tick();
+}
+
+// 흐른 시간과 마지막 갱신은 1초마다.
+function tick() {
+  document.querySelectorAll("[data-since]").forEach((el) => {
+    const s = el.dataset.since;
+    el.textContent = `${hm(s)} 시작 · ${mmss(Date.now() - new Date(s))}`;
+  });
+  const f = document.getElementById("foot");
+  if (f && gotAt) {
+    const sec = Math.max(0, Math.round((Date.now() - gotAt) / 1000));
+    const upd = snap?.updatedAt ? hm(snap.updatedAt) : "";
+    f.textContent = `코드 ${code} · 앱에서 ${upd}에 보냄 · ${sec < 5 ? "방금" : sec < 60 ? sec + "초 전" : Math.floor(sec / 60) + "분 전"} 받음 · 바뀌면 자동으로 새로 고쳐요`;
+  }
+}
+setInterval(tick, 1000);
+
+function showLoading() {
+  app.innerHTML = `<div class="entry"><div class="card"><div class="spin"></div><div class="muted">불러오는 중…</div></div></div>`;
+}
+
+function showGone() {
+  showEntry(`코드 ${code}로 공유된 행사가 없어요. 운영자가 공유를 껐거나 코드가 틀렸을 수 있어요.`);
+}
+
+if (!CODE_RE.test(code)) {
+  showEntry(code ? "코드는 6자리예요(영문 대문자·숫자)." : "");
+} else {
+  showLoading();
+  document.title = `친선 배드민턴 실시간 · ${code}`;
+  const db = getFirestore(initializeApp(firebaseConfig));
+  onSnapshot(doc(db, "live", code), { includeMetadataChanges: true }, (d) => {
+    offline = d.metadata.fromCache && !navigator.onLine;
+    if (!d.exists()) {
+      if (!d.metadata.fromCache) { snap = null; showGone(); }
+      return;
+    }
+    try {
+      snap = JSON.parse(d.data().data);
+      gotAt = Date.now();
+      document.title = `${snap.name} · 실시간`;
+      render();
+    } catch (e) {
+      app.innerHTML = `<div class="card empty"><b>자료를 읽지 못했어요</b>${esc(e.message)}</div>`;
+    }
+  }, (err) => {
+    showEntry("불러오지 못했어요. 인터넷 연결을 확인해 주세요. (" + err.code + ")");
+  });
+  addEventListener("online", () => { offline = false; render(); });
+  addEventListener("offline", () => { offline = true; render(); });
+}
+</script>
+</body>
+</html>
