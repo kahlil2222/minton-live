@@ -12,7 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <!--
-  참가자용 실시간 페이지(설계서 [LIVE-05]). 원본: 민턴 저장소 live_web/index.html.
+  참가자용 실시간 페이지(설계서 [LIVE-05], 월례회는 [LIVE-08]). 원본: 민턴 저장소 live_web/index.html.
   앱이 Firebase(Firestore) live/{코드} 문서에 올린 요약([LIVE-02])을 읽어 보여 준다. 읽기만 한다.
 -->
 <style>
@@ -92,6 +92,27 @@
   .wchip { background: #fff; border-radius: 14px; padding: 8px 12px; display: inline-flex; align-items: baseline; gap: 6px; box-shadow: 0 3px 10px rgba(59,130,246,.06); font-weight: 700; }
   .wchip i { font-style: normal; font-size: 12px; color: var(--waiting); font-weight: 900; }
   .wchip.me-hit { background: var(--me); }
+
+  /* 월례회(설계서 [LIVE-08]) */
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: #E9EEF7; border-radius: 14px; padding: 4px; margin-top: 14px; }
+  .tab { border: 0; background: transparent; border-radius: 11px; height: 40px; font-weight: 700; color: var(--sub); cursor: pointer; }
+  .tab.on { background: #fff; color: var(--primary); font-weight: 800; box-shadow: 0 2px 8px rgba(59,130,246,.1); }
+  .lg { padding: 12px 14px; }
+  .lg.cur { box-shadow: 0 0 0 1.6px rgba(240,90,110,.35), 0 6px 18px rgba(59,130,246,.06); }
+  .lg-top { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .lg-side { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .lg-side .bar { width: 4px; align-self: stretch; border-radius: 4px; flex: none; }
+  .lg-side .who { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+  .lg-side .sc { font-family: "Jua", sans-serif; font-size: 22px; color: var(--sub); }
+  .lg-side.won .sc { color: var(--text); }
+  .lg-side.won .who { font-weight: 900; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  .tbl th { color: var(--sub); font-weight: 700; font-size: 12px; text-align: center; padding: 6px 2px; border-bottom: 1px solid var(--line); }
+  .tbl td { text-align: center; padding: 8px 2px; font-weight: 700; }
+  .tbl td.tm { text-align: left; font-weight: 600; line-height: 1.35; }
+  .tbl tr.mine td { background: var(--me); }
+  .tbl .n { width: 34px; }
+  .gname { font-family: "Jua", sans-serif; font-size: 22px; }
 
   .banner { border-radius: 16px; padding: 12px 14px; font-size: 14px; font-weight: 700; margin-top: 12px; line-height: 1.45; }
   .empty { text-align: center; padding: 28px 16px; color: var(--sub); line-height: 1.6; }
@@ -252,6 +273,7 @@ function gameCard(g) {
 
 function render() {
   if (!snap) return;
+  if (snap.kind === "monthly") return renderLeague();
   const rounds = snap.rounds || [];
   // 처음과 새 회차가 생겼을 때는 마지막 회차를 보여 준다(옛 회차를 직접 고른 경우 제외).
   if (rounds.length !== lastRoundCount) {
@@ -320,6 +342,118 @@ function render() {
     const on = rb.querySelector(".rbtn.on");
     if (on && rscroll == null) on.scrollIntoView({ inline: "center", block: "nearest" });
   }
+  tick();
+}
+
+// ───────── 월례회(설계서 [LIVE-08]) ─────────
+let leagueView = store.get("minton-league-view") || "order";
+
+function teamNames(t) {
+  return (t?.p || []).map((id) => {
+    const p = (snap.players || {})[id] || { n: "?", g: "" };
+    return `<span class="${isMe(p.n) ? "pname me-hit" : ""}" style="font-size:14px">${esc(p.n)}${p.g ? ` <span class="grade" style="background:var(--primarySoft)">${esc(p.g)}</span>` : ""}</span>`;
+  }).join("");
+}
+
+function leagueGameCard(L, g, cur) {
+  const grp = L.groups[g.g] || { n: "?", t: [] };
+  const team = (id) => grp.t.find((t) => t.id === id);
+  const done = g.sa != null && g.sb != null;
+  const side = (id, sc, won, color) => `<div class="lg-side${won ? " won" : ""}"><span class="bar" style="background:${color}"></span><div class="who">${teamNames(team(id))}</div>${done ? `<span class="sc">${sc}</span>` : ""}</div>`;
+  const wonA = done && g.sa > g.sb, wonB = done && g.sb > g.sa;
+  return `<div class="card lg${!done && g.s === cur ? " cur" : ""}">
+    <div class="lg-top">${pill([g.c + "코트", "var(--primary)", "var(--primarySoft)"])}${pill([grp.n, "var(--text)", "var(--doneSoft)"])}<span style="flex:1"></span>${done ? pill(["끝", "var(--success)", "var(--successSoft)"]) : `<span class="muted" style="font-size:12px">${g.s}순서</span>`}</div>
+    ${side(g.a, g.sa, wonA, "var(--a)")}${side(g.b, g.sb, wonB, "var(--b)")}
+  </div>`;
+}
+
+// 내 이름으로 내 조·팀·순위·다음 경기 찾기.
+function myLeagueStatus(L) {
+  if (!me || !L) return "";
+  const ids = Object.entries(snap.players || {}).filter(([, p]) => isMe(p.n)).map(([id]) => id);
+  for (let gi = 0; gi < L.groups.length; gi++) {
+    const grp = L.groups[gi];
+    const t = grp.t.find((x) => x.p.some((id) => ids.includes(id)));
+    if (!t) continue;
+    const row = (grp.s || []).find((r) => r.t === t.id);
+    const next = (L.games || []).filter((g) => (g.a === t.id || g.b === t.id) && (g.sa == null || g.sb == null)).sort((x, y) => x.s - y.s)[0];
+    let msg = `${grp.n} · 지금 ${row ? row.r : "-"}위 (${row ? `${row.w}승 ${row.l}패` : ""})`;
+    if (next) {
+      const opp = grp.t.find((x) => x.id === (next.a === t.id ? next.b : next.a));
+      const oppNames = (opp?.p || []).map((id) => (snap.players[id] || { n: "?" }).n).join("·");
+      msg += next.s === L.cur ? `<br>🏸 지금 순서! ${next.c}코트 · 상대 ${esc(oppNames)}` : `<br>⏳ 다음 경기: ${next.s}순서 · ${next.c}코트 · 상대 ${esc(oppNames)}`;
+      return `<div class="me-msg" style="background:${next.s === L.cur ? "var(--playingSoft)" : "var(--waitingSoft)"};color:${next.s === L.cur ? "var(--playing)" : "var(--primaryDark)"}">${msg}</div>`;
+    }
+    return `<div class="me-msg" style="background:var(--successSoft);color:var(--success)">${msg}<br>✅ 내 경기를 모두 마쳤어요</div>`;
+  }
+  return `<div class="me-msg" style="background:var(--doneSoft);color:var(--sub)">‘${esc(me)}’ 님을 조 명단에서 찾지 못했어요.</div>`;
+}
+
+function renderLeague() {
+  const L = snap.league;
+  const st = STATUS[snap.status] || STATUS.live;
+  const games = L?.games || [];
+  const done = games.filter((g) => g.sa != null && g.sb != null).length;
+  const teams = (L?.groups || []).reduce((a, g) => a + g.t.length, 0);
+  let body = "";
+  if (snap.status === "ended") body += `<div class="banner" style="background:var(--doneSoft);color:var(--sub)">월례회가 끝났어요. 최종 순위를 볼 수 있어요.</div>`;
+  if (!L) {
+    body += `<div class="card empty" style="margin-top:14px"><b>아직 조 편성 전이에요</b>조와 경기 순서가 나오면 여기에 바로 보여요.</div>`;
+  } else {
+    body += `<div class="tabs"><button class="tab${leagueView === "order" ? " on" : ""}" data-v="order">경기 순서</button><button class="tab${leagueView === "groups" ? " on" : ""}" data-v="groups">조·순위</button></div>`;
+    if (leagueView === "order") {
+      const slots = [...new Set(games.map((g) => g.s))].sort((a, b) => a - b);
+      for (const s of slots) {
+        body += `<div class="sec-title"><h2 class="jua">${s}순서 ${s === L.cur ? pill(["지금 순서", "var(--playing)", "var(--playingSoft)"]) : ""}</h2></div>`;
+        body += `<div class="courts">${games.filter((g) => g.s === s).sort((a, b) => a.c - b.c).map((g) => leagueGameCard(L, g, L.cur)).join("")}</div>`;
+      }
+    } else {
+      L.groups.forEach((grp, gi) => {
+        const gg = games.filter((g) => g.g === gi);
+        const fin = gg.length && gg.every((g) => g.sa != null && g.sb != null);
+        const rows = (grp.s || []).map((r) => {
+          const t = grp.t.find((x) => x.id === r.t);
+          const mine = (t?.p || []).some((id) => isMe((snap.players[id] || {}).n));
+          return `<tr class="${mine ? "mine" : ""}"><td class="jua" style="font-size:17px;color:${r.r === 1 && r.pl ? "var(--assigned)" : "var(--text)"}">${r.r}</td><td class="tm">${(t?.p || []).map((id) => esc((snap.players[id] || { n: "?" }).n) + `<span class="muted" style="font-size:11px"> ${esc((snap.players[id] || {}).g || "")}</span>`).join(" · ")}</td><td>${r.pl}</td><td style="color:var(--primary)">${r.w}</td><td>${r.l}</td><td>${r.d > 0 ? "+" + r.d : r.d}</td></tr>`;
+        }).join("");
+        body += `<div class="card" style="margin-top:14px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="gname">${esc(grp.n)}</span>${pill([grp.k, "var(--primary)", "var(--primarySoft)"])}<span class="muted" style="font-size:13px">${grp.t.length}팀 · ${(grp.c || []).join("·")}코트</span><span style="flex:1"></span>${fin ? pill(["1위 확정", "var(--success)", "var(--successSoft)"]) : ""}</div>
+          <table class="tbl"><thead><tr><th class="n">순위</th><th style="text-align:left">팀</th><th class="n">경기</th><th class="n">승</th><th class="n">패</th><th class="n" style="width:42px">득실</th></tr></thead><tbody>${rows}</tbody></table>
+        </div>`;
+        body += `<div class="courts" style="margin-top:8px">${gg.map((g) => leagueGameCard(L, g, L.cur)).join("")}</div>`;
+      });
+    }
+  }
+
+  if (!document.getElementById("me")) {
+    app.innerHTML = `
+      <div class="card"><div id="hd"></div>
+        <div class="me"><div class="me-row"><input id="me" placeholder="내 이름을 넣으면 내 조와 다음 경기를 찾아 줘요" autocomplete="off" enterkeyhint="done"></div><div id="mymsg"></div></div>
+      </div>
+      <div id="net"></div><div id="body"></div><div class="foot" id="foot"></div>`;
+    const meInput = document.getElementById("me");
+    meInput.value = me;
+    meInput.addEventListener("input", () => { me = meInput.value.trim(); store.set("minton-me", me); render(); });
+  }
+  document.getElementById("hd").innerHTML = `
+      <div class="head"><div class="logo">${SHUTTLE}</div>
+        <div style="flex:1;min-width:0"><h1 class="jua">${esc(snap.name)}</h1><div class="date">${fmtDate(snap.date)} · 월례회</div></div>
+        ${pill(st, snap.status === "live" ? `<span class="dot" style="background:var(--success)"></span>` : "")}
+      </div>
+      <div class="stats">
+        <div class="stat"><b style="color:var(--primary)">${L ? L.groups.length : "-"}</b><span>조</span></div>
+        <div class="stat"><b>${L ? teams : "-"}</b><span>팀</span></div>
+        <div class="stat"><b style="color:var(--success)">${L ? done + "/" + games.length : "-"}</b><span>경기</span></div>
+        <div class="stat"><b style="color:var(--playing)">${L?.cur ?? "-"}</b><span>지금 순서</span></div>
+      </div>`;
+  document.getElementById("mymsg").innerHTML = myLeagueStatus(L);
+  document.getElementById("net").innerHTML = offline ? `<div class="banner" style="background:var(--dangerSoft);color:var(--danger)">인터넷 연결이 끊겼어요. 다시 연결되면 자동으로 새로 고쳐요.</div>` : "";
+  document.getElementById("body").innerHTML = body;
+  document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
+    leagueView = b.dataset.v;
+    store.set("minton-league-view", leagueView);
+    render();
+  }));
   tick();
 }
 
